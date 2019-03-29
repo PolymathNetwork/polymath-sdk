@@ -66,6 +66,6 @@
     "url": "https://github.com/fernandoespinosa/polymath-sdk.git"
   },
   "release": {
-    "branch": "release-branch"
+    "branch": "master"
   }
 }
