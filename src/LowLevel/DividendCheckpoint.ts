@@ -3,6 +3,8 @@ import { Module } from './Module';
 import { Context } from './LowLevel';
 import { TransactionObject } from 'web3/eth/types';
 import { SecurityToken } from './SecurityToken';
+import { PolymathError } from '../PolymathError';
+import { ErrorCodes } from '../types';
 import {
   GenericContract,
   Dividend,
@@ -126,23 +128,36 @@ export abstract class DividendCheckpoint<
   public async getTaxWithholdingList({
     checkpointIndex,
   }: GetTaxWithholdingListArgs): Promise<TaxWithholding[]> {
-    const {
-      0: investors,
-      2: percentages,
-    } = await this.contract.methods.getCheckpointData(checkpointIndex).call();
-
-    return zipWith(investors, percentages, (address, percentage) => ({
-      address,
-      percentage: fromWei(percentage).toNumber(),
-    }));
+    try {
+      const {
+        0: investors,
+        2: percentages,
+      } = await this.contract.methods.getCheckpointData(checkpointIndex).call();
+      return zipWith(investors, percentages, (address, percentage) => ({
+        address,
+        percentage: fromWei(percentage).toNumber(),
+      }));
+    } catch (error) {
+      throw new PolymathError({
+        code: ErrorCodes.UnexpectedReturnData,
+        message: error,
+      });
+    }
   }
 
   public async getInvestors({ dividendIndex }: GetDividendInvestorsArgs) {
-    const { 0: investors } = await this.contract.methods
-      .getDividendProgress(dividendIndex)
-      .call();
+    try {
+      const { 0: investors } = await this.contract.methods
+        .getDividendProgress(dividendIndex)
+        .call();
 
-    return investors;
+      return investors;
+    } catch (error) {
+      throw new PolymathError({
+        code: ErrorCodes.UnexpectedReturnData,
+        message: error,
+      });
+    }
   }
 
   public async fromDivisible(value: string) {
@@ -244,65 +259,72 @@ export abstract class DividendCheckpoint<
     symbol: string | null;
     decimals: number;
   }): Promise<Dividend> {
-    const { methods } = this.contract;
-    const dividend = await this.contract.methods
-      .dividends(dividendIndex)
-      .call();
+    try {
+      const { methods } = this.contract;
+      const dividend = await this.contract.methods
+        .dividends(dividendIndex)
+        .call();
 
-    const {
-      0: addresses,
-      1: claimedPayments,
-      2: exclusions,
-      3: withheldTaxes,
-      4: paidAmounts,
-      5: balances,
-    } = await methods.getDividendProgress(dividendIndex).call();
+      const {
+        0: addresses,
+        1: claimedPayments,
+        2: exclusions,
+        3: withheldTaxes,
+        4: paidAmounts,
+        5: balances,
+      } = await methods.getDividendProgress(dividendIndex).call();
 
-    // NOTE @monitz87: this is done like this because lodash's zipWith function doesn't
-    // support more than 5 arrays in its type definition
-    const investors = [];
+      // NOTE @monitz87: this is done like this because lodash's zipWith function doesn't
+      // support more than 5 arrays in its type definition
+      const investors = [];
 
-    for (let i = 0; i < addresses.length; i += 1) {
-      investors.push({
-        address: addresses[i],
-        paymentReceived: claimedPayments[i],
-        excluded: exclusions[i],
-        withheldTax: fromDivisible(withheldTaxes[i], decimals),
-        amountReceived: fromDivisible(paidAmounts[i], decimals),
-        balance: fromWei(balances[i]),
+      for (let i = 0; i < addresses.length; i += 1) {
+        investors.push({
+          address: addresses[i],
+          paymentReceived: claimedPayments[i],
+          excluded: exclusions[i],
+          withheldTax: fromDivisible(withheldTaxes[i], decimals),
+          amountReceived: fromDivisible(paidAmounts[i], decimals),
+          balance: fromWei(balances[i]),
+        });
+      }
+
+      const {
+        checkpointId,
+        created,
+        maturity,
+        expiry,
+        amount,
+        claimedAmount,
+        totalSupply,
+        reclaimed,
+        totalWithheld,
+        totalWithheldWithdrawn,
+        name,
+      } = dividend;
+
+      return {
+        index: dividendIndex,
+        checkpointId: parseInt(checkpointId, 10),
+        dividendType: this.dividendType,
+        created: fromUnixTimestamp(parseInt(created, 10)),
+        maturity: fromUnixTimestamp(parseInt(maturity, 10)),
+        expiry: fromUnixTimestamp(parseInt(expiry, 10)),
+        amount: fromDivisible(amount, decimals),
+        claimedAmount: fromDivisible(claimedAmount, decimals),
+        totalSupply: fromWei(totalSupply),
+        reclaimed,
+        totalWithheld: fromDivisible(totalWithheld, decimals),
+        totalWithheldWithdrawn: fromDivisible(totalWithheldWithdrawn, decimals),
+        name: toAscii(name),
+        currency: symbol,
+        investors,
+      };
+    } catch (error) {
+      throw new PolymathError({
+        code: ErrorCodes.UnexpectedReturnData,
+        message: error,
       });
     }
-
-    const {
-      checkpointId,
-      created,
-      maturity,
-      expiry,
-      amount,
-      claimedAmount,
-      totalSupply,
-      reclaimed,
-      totalWithheld,
-      totalWithheldWithdrawn,
-      name,
-    } = dividend;
-
-    return {
-      index: dividendIndex,
-      checkpointId: parseInt(checkpointId, 10),
-      dividendType: this.dividendType,
-      created: fromUnixTimestamp(parseInt(created, 10)),
-      maturity: fromUnixTimestamp(parseInt(maturity, 10)),
-      expiry: fromUnixTimestamp(parseInt(expiry, 10)),
-      amount: fromDivisible(amount, decimals),
-      claimedAmount: fromDivisible(claimedAmount, decimals),
-      totalSupply: fromWei(totalSupply),
-      reclaimed,
-      totalWithheld: fromDivisible(totalWithheld, decimals),
-      totalWithheldWithdrawn: fromDivisible(totalWithheldWithdrawn, decimals),
-      name: toAscii(name),
-      currency: symbol,
-      investors,
-    };
   }
 }
