@@ -480,6 +480,7 @@ export interface EnablePercentageTransferManagerProcedureArgs {
    * If true, issuing tokens to a wallet that doesn't own tokens will bypass percentage restrictions
    */
   allowPrimaryIssuance?: boolean;
+  whitelistEntries?: PercentageWhitelistEntry[];
 }
 
 /**
